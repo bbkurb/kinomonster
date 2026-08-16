@@ -1,0 +1,41 @@
+# Запасной вариант, если корень сайта указывает на папку проекта,
+# а не на public/ (как это должно быть в CodeIgniter 4).
+#
+# Правильное решение — направить DocumentRoot веб-сервера на public/.
+# Но если по какой-то причине это не сделано, файл ниже:
+#   1) перенаправляет все запросы в public/;
+#   2) закрывает доступ к исходникам, .git и конфигам.
+#
+# На боевом сервере лучше настроить DocumentRoot и удалить этот файл.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Не трогаем запросы, которые уже адресованы в public/
+    RewriteCond %{REQUEST_URI} ^/public/ [OR]
+    RewriteCond %{REQUEST_URI} ^public/
+    RewriteRule ^ - [L]
+
+    # Всё остальное направляем внутрь public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# Прямой доступ к служебным каталогам и файлам запрещён,
+# даже если mod_rewrite отключён.
+<IfModule authz_core_module>
+    <FilesMatch "^(env|env\.example|spark|composer\.(json|lock)|\.gitignore|\.gitattributes|README\.md|LICENSE)$">
+        Require all denied
+    </FilesMatch>
+</IfModule>
+<IfModule !authz_core_module>
+    <FilesMatch "^(env|env\.example|spark|composer\.(json|lock)|\.gitignore|\.gitattributes|README\.md|LICENSE)$">
+        Deny from all
+    </FilesMatch>
+</IfModule>
+
+# Каталог .git не должен быть доступен через веб никогда:
+# иначе исходники и история проекта скачиваются целиком.
+RedirectMatch 404 /\.git
+
+# Отключаем листинг каталогов — вместо списка файлов отдаётся 403.
+Options -Indexes
