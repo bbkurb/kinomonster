@@ -20,6 +20,11 @@ class AddUserAuthColumns extends Migration
 {
     public function up(): void
     {
+        // getFieldNames() кеширует результат внутри соединения, поэтому после
+        // предыдущего addColumn/dropColumn проверки видели бы устаревший
+        // список колонок и миграция падала бы на «duplicate column».
+        $this->resetFieldCache();
+
         $fields = [];
 
         if (! $this->db->fieldExists('role', 'users')) {
@@ -68,17 +73,57 @@ class AddUserAuthColumns extends Migration
         }
 
         // Индексы под самые частые запросы.
-        $this->db->query('CREATE INDEX IF NOT EXISTS idx_users_username ON users (username)');
-        $this->db->query('CREATE INDEX IF NOT EXISTS idx_users_email ON users (email)');
+        // MySQL не поддерживает CREATE INDEX IF NOT EXISTS, поэтому наличие
+        // индекса проверяется по метаданным таблицы.
+        foreach (['idx_users_username' => 'username', 'idx_users_email' => 'email'] as $name => $column) {
+            if ($this->indexExists('users', $name)) {
+                continue;
+            }
+
+            $this->db->query(sprintf(
+                'CREATE INDEX %s ON %s (%s)',
+                $this->db->escapeIdentifier($name),
+                $this->db->protectIdentifiers('users', true),
+                $this->db->protectIdentifiers($column),
+            ));
+        }
+    }
+
+    /**
+     * Существует ли индекс с таким именем.
+     */
+    private function indexExists(string $table, string $index): bool
+    {
+        foreach ($this->db->getIndexData($table) as $data) {
+            if (strcasecmp($data->name, $index) === 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function down(): void
     {
+        $this->resetFieldCache();
+
         foreach (['role', 'reset_key', 'reset_expires', 'activated', 'created_at'] as $column) {
             if ($this->db->fieldExists($column, 'users')) {
                 $this->forge->dropColumn('users', $column);
+                $this->resetFieldCache();
             }
         }
+    }
+
+    /**
+     * Сбрасывает кеш метаданных соединения.
+     *
+     * Без этого fieldExists() после изменения схемы возвращает данные,
+     * собранные до изменения.
+     */
+    private function resetFieldCache(): void
+    {
+        $this->db->dataCache = [];
     }
 }
 
