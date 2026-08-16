@@ -1,1 +1,0 @@
-<p><?php echo $result; ?></p><br><br><br><a href="/news/">Все новости</a>
